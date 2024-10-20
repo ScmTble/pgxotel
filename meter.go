@@ -3,6 +3,7 @@ package pgxotel
 import (
 	"context"
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"time"
@@ -19,21 +20,31 @@ var (
 
 type QueryMeter struct {
 	latency metric.Int64Histogram
+	mp      metric.MeterProvider
 }
 
-func NewQueryMeter(meterProvider metric.MeterProvider) (*QueryMeter, error) {
-	latency, err := meterProvider.Meter("pgx-otel").Int64Histogram(
+func NewQueryMeter(options ...queryMeterOption) (*QueryMeter, error) {
+	q := &QueryMeter{}
+
+	for _, option := range options {
+		option(q)
+	}
+
+	if q.mp == nil {
+		q.mp = otel.GetMeterProvider()
+	}
+
+	latency, err := q.mp.Meter("pgx-otel").Int64Histogram(
 		"pgx.latency",
 		metric.WithDescription("The latency of calls in milliseconds"),
 		metric.WithUnit("ms"),
 	)
 	if err != nil {
-
+		return nil, err
 	}
+	q.latency = latency
 
-	return &QueryMeter{
-		latency: latency,
-	}, nil
+	return q, nil
 }
 
 func (q *QueryMeter) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
