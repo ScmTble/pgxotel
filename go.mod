@@ -1,4 +1,4 @@
-module github.com/pgx-contrib/pgxotel
+module github.com/ScmTble/pgxotel
 
 go 1.22.0
 
