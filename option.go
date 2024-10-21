@@ -12,7 +12,7 @@ func WithQueryMeter(mp metric.MeterProvider) queryMeterOption {
 	}
 }
 
-func withNextTracer(nextTracer Tracer) queryMeterOption {
+func WithNextTracer(nextTracer Tracer) queryMeterOption {
 	return func(m *QueryMeter) {
 		m.next = nextTracer
 	}
