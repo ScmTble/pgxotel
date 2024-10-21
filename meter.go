@@ -2,11 +2,12 @@ package pgxotel
 
 import (
 	"context"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"time"
 )
 
 type queryMeterKey struct{}
@@ -21,6 +22,7 @@ var (
 type QueryMeter struct {
 	latency metric.Int64Histogram
 	mp      metric.MeterProvider
+	next    Tracer
 }
 
 func NewQueryMeter(options ...queryMeterOption) (*QueryMeter, error) {
@@ -50,10 +52,18 @@ func NewQueryMeter(options ...queryMeterOption) (*QueryMeter, error) {
 func (q *QueryMeter) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
 	startTime := time.Now()
 
+	if q.next != nil {
+		ctx = q.next.TracePrepareStart(ctx, conn, data)
+	}
+
 	return context.WithValue(ctx, queryMeterKey{}, startTime)
 }
 
 func (q *QueryMeter) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareEndData) {
+	if q.next != nil {
+		q.next.TracePrepareEnd(ctx, conn, data)
+	}
+
 	startTime, ok := ctx.Value(queryMeterKey{}).(time.Time)
 	if !ok {
 		return
@@ -68,10 +78,18 @@ func (q *QueryMeter) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data p
 func (q *QueryMeter) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
 	startTime := time.Now()
 
+	if q.next != nil {
+		ctx = q.next.TraceConnectStart(ctx, data)
+	}
+
 	return context.WithValue(ctx, queryMeterKey{}, startTime)
 }
 
 func (q *QueryMeter) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEndData) {
+	if q.next != nil {
+		q.next.TraceConnectEnd(ctx, data)
+	}
+
 	startTime, ok := ctx.Value(queryMeterKey{}).(time.Time)
 	if !ok {
 		return
@@ -86,14 +104,24 @@ func (q *QueryMeter) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectE
 func (q *QueryMeter) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchStartData) context.Context {
 	startTime := time.Now()
 
+	if q.next != nil {
+		ctx = q.next.TraceBatchStart(ctx, conn, data)
+	}
+
 	return context.WithValue(ctx, queryMeterKey{}, startTime)
 }
 
 func (q *QueryMeter) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
-	return
+	if q.next != nil {
+		q.next.TraceBatchQuery(ctx, conn, data)
+	}
 }
 
 func (q *QueryMeter) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchEndData) {
+	if q.next != nil {
+		q.next.TraceBatchEnd(ctx, conn, data)
+	}
+
 	startTime, ok := ctx.Value(queryMeterKey{}).(time.Time)
 	if !ok {
 		return
@@ -105,13 +133,21 @@ func (q *QueryMeter) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx
 	))
 }
 
-func (q *QueryMeter) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context {
+func (q *QueryMeter) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 	startTime := time.Now()
+
+	if q.next != nil {
+		ctx = q.next.TraceQueryStart(ctx, conn, data)
+	}
 
 	return context.WithValue(ctx, queryMeterKey{}, startTime)
 }
 
-func (q *QueryMeter) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryEndData) {
+func (q *QueryMeter) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
+	if q.next != nil {
+		q.next.TraceQueryEnd(ctx, conn, data)
+	}
+
 	startTime, ok := ctx.Value(queryMeterKey{}).(time.Time)
 	if !ok {
 		return
@@ -121,4 +157,11 @@ func (q *QueryMeter) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, _ pgx.Trace
 	q.latency.Record(ctx, latency.Milliseconds(), metric.WithAttributes(
 		attribute.String("method", "query"),
 	))
+}
+
+type Tracer interface {
+	pgx.QueryTracer
+	pgx.BatchTracer
+	pgx.ConnectTracer
+	pgx.PrepareTracer
 }
