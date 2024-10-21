@@ -20,7 +20,7 @@ var (
 )
 
 type QueryMeter struct {
-	latency metric.Int64Histogram
+	latency metric.Float64Histogram
 	mp      metric.MeterProvider
 	next    Tracer
 }
@@ -36,10 +36,11 @@ func NewQueryMeter(options ...queryMeterOption) (*QueryMeter, error) {
 		q.mp = otel.GetMeterProvider()
 	}
 
-	latency, err := q.mp.Meter("pgx-otel").Int64Histogram(
+	latency, err := q.mp.Meter("pgx-otel").Float64Histogram(
 		"pgx.latency",
 		metric.WithDescription("The latency of calls in milliseconds"),
 		metric.WithUnit("ms"),
+		metric.WithExplicitBucketBoundaries(0.5, 1.0, 1.5, 2, 3, 4, 5, 10, 15),
 	)
 	if err != nil {
 		return nil, err
@@ -69,9 +70,10 @@ func (q *QueryMeter) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data p
 		return
 	}
 
-	latency := time.Since(startTime)
-	q.latency.Record(ctx, latency.Milliseconds(), metric.WithAttributes(
+	latency := float64(time.Since(startTime).Nanoseconds()) / 1e6
+	q.latency.Record(ctx, latency, metric.WithAttributes(
 		attribute.String("method", "prepare"),
+		attribute.String("db", conn.Config().Database),
 	))
 }
 
@@ -95,9 +97,10 @@ func (q *QueryMeter) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectE
 		return
 	}
 
-	latency := time.Since(startTime)
-	q.latency.Record(ctx, latency.Milliseconds(), metric.WithAttributes(
+	latency := float64(time.Since(startTime).Nanoseconds()) / 1e6
+	q.latency.Record(ctx, latency, metric.WithAttributes(
 		attribute.String("method", "connect"),
+		attribute.String("db", data.Conn.Config().Database),
 	))
 }
 
@@ -127,9 +130,10 @@ func (q *QueryMeter) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx
 		return
 	}
 
-	latency := time.Since(startTime)
-	q.latency.Record(ctx, latency.Milliseconds(), metric.WithAttributes(
+	latency := float64(time.Since(startTime).Nanoseconds()) / 1e6
+	q.latency.Record(ctx, latency, metric.WithAttributes(
 		attribute.String("method", "batch"),
+		attribute.String("db", conn.Config().Database),
 	))
 }
 
@@ -153,9 +157,10 @@ func (q *QueryMeter) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx
 		return
 	}
 
-	latency := time.Since(startTime)
-	q.latency.Record(ctx, latency.Milliseconds(), metric.WithAttributes(
+	latency := float64(time.Since(startTime).Nanoseconds()) / 1e6
+	q.latency.Record(ctx, latency, metric.WithAttributes(
 		attribute.String("method", "query"),
+		attribute.String("db", conn.Config().Database),
 	))
 }
 
